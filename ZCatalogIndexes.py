@@ -83,34 +83,129 @@
 # 
 ##############################################################################
 
-"""ZCatalog product"""
+from  Globals import DTMLFile
+import Globals
+from OFS.Folder import Folder
+from OFS.FindSupport import FindSupport
+from OFS.History import Historical
+from OFS.SimpleItem import SimpleItem
+from OFS.ObjectManager import ObjectManager, IFAwareObjectManager
 
-import ZCatalog, Catalog, CatalogAwareness,  ZClasses
-from Products.PluginIndexes.TextIndex import Vocabulary
-from ZClasses import createZClassForBase
+import string, os, sys, time
 
-createZClassForBase( ZCatalog.ZCatalog , globals()
-                   , 'ZCatalogBase', 'ZCatalog' )
-createZClassForBase( CatalogAwareness.CatalogAware, globals()
-                   , 'CatalogAwareBase', 'CatalogAware' )
+from Acquisition import Implicit
+from Persistence import Persistent
+from zLOG import LOG, ERROR
 
-def initialize(context):
-    context.registerClass(
-        ZCatalog.ZCatalog, 
-        permission='Add ZCatalogs',
-        constructors=(ZCatalog.manage_addZCatalogForm,
-                      ZCatalog.manage_addZCatalog),
-        icon='www/ZCatalog.gif',
+from Products.PluginIndexes.common.PluggableIndex import PluggableIndexInterface
+
+_marker = []
+
+class ZCatalogIndexes (IFAwareObjectManager, Folder, Persistent, Implicit):
+    """A mapping object, responding to getattr requests by looking up
+    the requested indexes in an object manager."""
+
+    # The interfaces we want to show up in our object manager
+    _product_interfaces = (PluggableIndexInterface, )
+
+    meta_type="ZCatalogIndex"
+#    icon="misc_/ZCatalog/www/index.gif"
+
+    manage_options = (
+        ObjectManager.manage_options +
+        Historical.manage_options +
+        SimpleItem.manage_options
+    )
+
+    manage_main = DTMLFile('dtml/manageIndex',globals())
+    addIndexForm= DTMLFile('dtml/addIndexForm',globals())
+
+    __ac_permissions__ = (
+
+        ('Manage ZCatalogIndex Entries',
+            ['manage_foobar',],
+
+            ['Manager']
+        ),
+
+        ('Search ZCatalogIndex',
+            ['searchResults', '__call__', 'all_meta_types',
+             'valid_roles', 'getobject'],
+
+            ['Anonymous', 'Manager']
         )
+    )
 
-    context.registerClass(
-        Vocabulary.Vocabulary,
-        permission='Add Vocabularies',
-        constructors=(Vocabulary.manage_addVocabularyForm,
-                      Vocabulary.manage_addVocabulary),
-        icon='www/Vocabulary.gif',
-        )
-    
-    context.registerHelp()
-    context.registerHelpTitle('Zope Help')
+
+    #
+    # Object Manager methods
+    #
+
+    # base accessors loop back through our dictionary interface
+    def _setOb(self, id, object): 
+        indexes = self.aq_parent._catalog.indexes
+        indexes[id] = object
+        self.aq_parent._indexes = indexes
+        #self.aq_parent._p_changed = 1
+
+    def _delOb(self, id):
+        indexes = self.aq_parent._catalog.indexes
+        del indexes[id]
+        self.aq_parent._indexes = indexes
+        #self.aq_parent._p_changed = 1
+
+    def _getOb(self, id, default=_marker): 
+        indexes = self.aq_parent._catalog.indexes
+        if default is _marker:  return indexes.get(id)
+        return indexes.get(id, default)
+
+    def objectIds(self, spec=None):
+        
+        indexes = self.aq_parent._catalog.indexes
+        if spec is not None:
+            if type(spec) == type('s'):
+                spec = [spec]
+            set = []
+
+            for ob in indexes.keys():
+                o = indexes.get(ob)
+                if hasattr(o, 'meta_type') and getattr(o,'meta_type') in spec:
+                    set.append(ob)
+
+            return set
+
+        return indexes.keys()
+
+    # Eat _setObject calls
+    def _setObject(self, id, object, roles=None, user=None, set_owner=1):
+        pass
+
+    #
+    # traversal
+    #
+
+    def __bobo_traverse__(self, REQUEST, name):
+        indexes = self.aq_parent._catalog.indexes;
+
+        o = indexes.get(name, None)
+        if o is not None:
+            if getattr(o,'manage_workspace', None) is None:
+                o = OldCatalogWrapperObject(o)
+            return o.__of__(self)
+
+        return getattr(self, name)
+
+class OldCatalogWrapperObject(SimpleItem, Implicit):
+
+    manage_options= (
+        {'label': 'Settings',     
+         'action': 'manage_main'},
+    )
+ 
+    manage_main = DTMLFile('dtml/manageOldindex',globals())
+    manage_workspace = manage_main
+
+    def __init__(self, o):
+        self.index = o
+
 
