@@ -4,6 +4,8 @@ Changelog
 3.0.3 (unreleased)
 ------------------
 
+- Handle unicode issues in index
+  [vangheem]
 
 3.0.2 (2014-03-04)
 ------------------

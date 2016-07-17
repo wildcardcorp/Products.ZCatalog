@@ -423,7 +423,7 @@ class UnIndex(SimpleItem):
             # Filter duplicates
             setlist = []
             for k in record.keys:
-                s = index.get(k, None)
+                s = index.get(k.encode('utf8'), None)
                 # If None, try to bail early
                 if s is None:
                     if operator == 'or':
